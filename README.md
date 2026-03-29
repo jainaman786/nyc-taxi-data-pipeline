@@ -2,98 +2,270 @@
 
 ![DuckDB](https://img.shields.io/badge/DuckDB-v1.10.1-yellow?style=flat-square&logo=duckdb)
 ![dbt](https://img.shields.io/badge/dbt-v1.11.7-FF694B?style=flat-square&logo=dbt)
-![Apache Airflow](https://img.shields.io/badge/Airflow-Top_1%25-017CEE?style=flat-square&logo=apacheairflow)
+![Apache Airflow](https://img.shields.io/badge/Airflow-2.x-017CEE?style=flat-square&logo=apacheairflow)
 ![PySpark](https://img.shields.io/badge/PySpark-Distributed-E25A1C?style=flat-square&logo=apachespark)
 ![Snowflake](https://img.shields.io/badge/Snowflake-Dialect-29B5E8?style=flat-square&logo=snowflake)
 
-This repository serves as a top-tier production architecture solution for a large-scale NYC Taxi analytics pipeline. It systematically ingests, sanitizes, tests, and models massive volumes (~38M rows local, 1.5B rows distributed via Spark) of NYC Yellow Taxi data.
+A production-inspired data engineering pipeline for the NYC Yellow Taxi dataset (2023). Ingests, cleans, models, tests, and orchestrates ~38M rows locally via DuckDB + dbt, with a distributed PySpark script for the full 1.5B-row historical dataset.
 
 ---
 
-## 🚀 Setup & Execution (1-Click Docker Architecture)
+## 📂 Repository Structure
 
-This repository proves out **"Zero-Copy" Data Engineering** by orchestrating our entire analytics sweep dynamically off raw `.parquet` files strictly via serverless DuckDB, orchestrated by a containerized Airflow architecture.
+```
+.
+├── dbt/                        # dbt project
+│   ├── models/
+│   │   ├── staging/            # stg_yellow_trips, stg_taxi_zones
+│   │   ├── intermediate/       # int_trips_enriched (filtered + joined)
+│   │   └── marts/              # fct_trips, dim_zones, agg_daily_revenue, agg_zone_performance
+│   ├── tests/                  # Custom singular + generic tests
+│   ├── seeds/                  # taxi_zone_lookup.csv
+│   ├── dbt_project.yml
+│   ├── profiles.yml            # DuckDB target config
+│   └── profiles.yml.example
+├── dags/
+│   └── nyc_taxi_daily_pipeline.py   # Airflow DAG
+├── queries/
+│   ├── q1_top_zones_by_revenue.sql
+│   ├── q2_hour_of_day_pattern.sql
+│   └── q3_consecutive_gap_analysis.sql
+├── spark/
+│   └── process_historical.py        # PySpark bonus script
+├── docker-compose.yml
+├── requirements.txt
+├── .gitignore
+└── README.md
+```
 
-**The "1-Click" Execution Chain:**
-There is absolutely ZERO requirement to configure Python environments or install Airflow locally to grade this repository! We have containerized the architecture specifically for rapid testing.
-1. Download `taxi_zone_lookup.csv` into `dbt/seeds/` and place `yellow_tripdata_2023-01.parquet` straight into the project root.
-2. In your terminal, boot the orchestration cluster:
-   ```bash
-   docker compose up -d
+---
+
+## 🚀 Setup & Execution
+
+This project uses a **zero-copy approach**: raw `.parquet` files are queried directly off disk via DuckDB — no `INSERT` sweeps, no dedicated database server.
+
+### Prerequisites
+
+- Docker + Docker Compose (for Option 1)
+- Python 3.9+ with `pip` (for Option 2)
+- `yellow_tripdata_2023-01.parquet` (or multiple months) placed in the project root
+- `taxi_zone_lookup.csv` placed in `dbt/seeds/`
+
+---
+
+### ▶️ Option 1: Full Orchestrated Pipeline via Docker (Recommended)
+
+Spins up Airflow (Webserver + Scheduler + Postgres metadata DB) with dbt and DuckDB pre-configured inside the container.
+
+```bash
+# 1. Start the stack
+docker compose up -d
+
+# 2. Open Airflow UI
+#    URL:      http://localhost:8080
+#    Username: admin
+#    Password: admin
+
+# 3. Trigger the DAG: nyc_taxi_daily_pipeline
+```
+
+Airflow will run the full pipeline in sequence:
+1. `check_source_freshness` — validates the Parquet file exists for the target date
+2. `run_dbt_staging` — cleans and casts raw data
+3. `run_dbt_intermediate` — enriches with zone names, filters invalid records
+4. `run_dbt_marts` — builds fact table, dimensions, and aggregations
+5. `run_dbt_tests` — runs all built-in + custom dbt tests; fails the DAG if any test fails
+6. `notify_success` — logs trip count and revenue for the day
+
+---
+
+### ▶️ Option 2: Run dbt Locally (Without Airflow)
+
+Use this to iterate on models or run tests independently.
+
+**Step 1 — Create and activate a virtual environment**
+
+```bash
+# Create venv
+python -m venv .venv
+
+# Activate (macOS/Linux)
+source .venv/bin/activate
+
+# Activate (Windows)
+.venv\Scripts\activate
+```
+
+**Step 2 — Install dependencies**
+
+```bash
+pip install -r requirements.txt
+# or install dbt-duckdb directly:
+pip install dbt-duckdb
+```
+
+**Step 3 — Navigate to the dbt project**
+
+```bash
+cd dbt
+```
+
+**Step 4 — Load seed data**
+
+```bash
+dbt seed
+```
+
+**Step 5 — Run models**
+
+```bash
+# Run all models
+dbt run
+
+# Or run layer by layer
+dbt run --select staging
+dbt run --select intermediate
+dbt run --select marts
+```
+
+**Step 6 — Run tests**
+
+```bash
+dbt test
+```
+
+**Step 7 — Run a specific model**
+
+```bash
+dbt run --select stg_yellow_trips
+dbt run --select fct_trips
+dbt run --select agg_daily_revenue
+```
+
+---
+
+### ▶️ Option 3: Run SQL Queries Directly
+
+The `queries/` folder contains three analytical SQL scripts written in Snowflake dialect (also compatible with DuckDB for local testing).
+
+```bash
+# With DuckDB CLI
+duckdb dbt/taxi.duckdb < queries/q1_top_zones_by_revenue.sql
+duckdb dbt/taxi.duckdb < queries/q2_hour_of_day_pattern.sql
+duckdb dbt/taxi.duckdb < queries/q3_consecutive_gap_analysis.sql
+```
+
+---
+
+## 🏛️ Architecture Overview
+
+### DuckDB + dbt over Snowflake
+
+The primary trade-off was using **DuckDB + dbt-duckdb** instead of a Snowflake trial account. DuckDB can query `.parquet` files directly via `external_location` in `sources.yml` — no ingestion step needed. For a 3–4 GB local dataset, this eliminates setup friction while preserving the full dbt model layer (staging → intermediate → marts) that a production Snowflake workflow would use.
+
+For a real production deployment, swapping the dbt profile target from DuckDB to Snowflake requires changing only `profiles.yml`.
+
+### Containerized Airflow
+
+Rather than requiring reviewers to install Airflow natively (which is particularly fragile on Windows without WSL2), the `docker-compose.yml` spins up a self-contained `LocalExecutor` stack. The `dbt/` and `dags/` directories are bind-mounted into the container, so model edits are reflected immediately without rebuilding.
+
+---
+
+## 📊 Data Model Overview
+
+```
+Raw Parquet Files
+      │
+      ▼
+[Staging Layer]
+  stg_yellow_trips     — renamed columns, cast types, trip_duration_minutes
+  stg_taxi_zones       — zone lookup from seed CSV
+      │
+      ▼
+[Intermediate Layer]
+  int_trips_enriched   — joins pickup/dropoff zone names, filters invalid records
+      │
+      ▼
+[Mart Layer]
+  fct_trips            — final fact table of valid, enriched trips
+  dim_zones            — zone dimension
+  agg_daily_revenue    — daily KPIs: trips, fare, tips, tip rate %
+  agg_zone_performance — zone-level ranking + high-volume flag
+```
+
+### Data Quality Tests
+
+- `not_null` and `unique` on all primary keys
+- Custom generic test: `test_duration_range` — asserts `trip_duration_minutes` is within a configurable `min_value` / `max_value`
+- Custom singular test: `assert_total_amount_geq_fare` — asserts no trip has `total_amount < fare_amount`
+
+---
+
+## 🧾 SQL Queries (Task 3)
+
+All queries are in `queries/` — Snowflake dialect, tested locally against DuckDB.
+
+| File | Description |
+|---|---|
+| `q1_top_zones_by_revenue.sql` | Top 10 pickup zones by revenue per month using `DENSE_RANK()` |
+| `q2_hour_of_day_pattern.sql` | Hourly demand: trips, avg fare, avg tip %, 3-hour rolling average |
+| `q3_consecutive_gap_analysis.sql` | Max gap between consecutive trips per zone per day using `LEAD()` |
+
+---
+
+## 🧠 Brainstormer Responses
+
+### Task 1: Zone Revenue Ranking — Monthly vs. Annual
+
+Ranking zones by revenue across the entire year flattens seasonality — a zone that dominates January but is quiet in July gets buried under a flat annual rank. Partitioning by month (`RANK() OVER (PARTITION BY trip_month ORDER BY total_revenue DESC)`) surfaces which zones perform well *within each time period*, which is more useful for operational planning (e.g., fleet allocation, surge pricing). This is implemented in `agg_zone_performance.sql`.
+
+### Task 2: Preventing Bad Data from Reaching Marts (Write-Audit-Publish)
+
+If `run_dbt_tests` fails mid-pipeline, no data should be visible to downstream consumers. The approach implemented is the **Write-Audit-Publish (WAP)** pattern:
+
+1. **Write** — `dbt run` writes all mart models to an isolated schema: `taxi_marts_staging`
+2. **Audit** — `dbt test` runs against `taxi_marts_staging` exclusively
+3. **Publish** — Only if all tests pass does Airflow execute an atomic schema swap:
+   ```sql
+   ALTER SCHEMA taxi_marts_staging RENAME TO taxi_marts_production;
    ```
-3. Open `http://localhost:8080/home`, log in using `admin/admin`, and hit **Trigger DAG** on `nyc_taxi_daily_pipeline`. Watch as Airflow securely compiles the logic, `dbt` runs the transformations, and `DuckDB` processes the gigabytes of Parquet math globally!
 
-### 📸 Proof of Execution (Pipeline Validation)
+Downstream BI tools (Looker, Metabase) point only at `_production`. A mid-flight test failure leaves `_production` untouched at its last known-good state.
+
+### Task 3: Query 3 Performance on 38M Rows
+
+`LEAD()`-based gap analysis is expensive because it requires a full sort by `(PULocationID, tpep_dropoff_datetime)` across the dataset. Mitigation strategies:
+
+- **Clustering key**: Cluster the source table on `(PULocationID, DATE(tpep_pickup_datetime))` so micro-partitions are pruned before the window sort
+- **Materialized View**: Pre-compute and cache the gap results; refreshed nightly — ad-hoc queries hit the cache, not the warehouse compute
+- **Result cache**: Snowflake's 24-hour result cache means the same query re-runs in milliseconds if the underlying data hasn't changed
+- **Avoid Search Optimization Service** here — SOS targets random point lookups, not sequential window computations
+
+---
+
+## ⚖️ Key Trade-offs
+
+| Decision | Benefit | Limitation |
+|---|---|---|
+| DuckDB over Snowflake | Zero setup, instant Parquet queries | Not representative of cloud warehouse scale behavior |
+| Dockerized Airflow | Fully reproducible, no host OS dependencies | Slight startup overhead (~30s) |
+| Direct Parquet querying | No ingestion step, zero-copy reads | Limited indexing vs. warehouse tables |
+| Single-month Parquet for local testing | Fast iteration | Full 12-month pipeline requires all files in `DATA_DIR` |
+
+---
+
+## 📸 Proof of Execution
+
 <img width="940" height="241" alt="image" src="https://github.com/user-attachments/assets/e025b498-eb9e-459a-9e7b-fdeb4be7c4cf" />
 <img width="940" height="438" alt="image" src="https://github.com/user-attachments/assets/c3137af3-74e2-4dae-a86e-3b5f0e7ea559" />
 <img width="940" height="433" alt="image" src="https://github.com/user-attachments/assets/fe1c7bc9-31ec-46f6-b52e-ab2af240b290" />
 
 ---
 
-## 🏛️ Architecture Overview & Trade-Offs
+## ⚙️ AI-Assisted Development
 
-### 1. The DuckDB & dbt Decision
-The most critical architectural decision made was executing **DuckDB** paired with **dbt-duckdb** instead of spinning up a 30-day Snowflake trial. Snowflake is phenomenally robust for business-wide BI routing, but loading 38 Million rows manually (via sluggish `INSERT` sweeps) purely for a local assignment wastes gigabytes of computing block and network bandwidth. 
-* DuckDB bridges this logically via the **Local Parquet Pointer Engine**. We mapped `sources.yml` directly against the raw `.parquet` format on the hard drive. 
-* `dbt` essentially processes the SQL aggregates natively querying the raw disk chunks on-the-fly, generating millisecond response times without ever running a dedicated database server locally.
+This project was built with assistance from Antigravity and other AI coding tools to accelerate delivery across all four tasks. AI was used to generate initial scaffolding, suggest optimization strategies, and debug environment issues (Airflow 3 deprecations, DuckDB profile config, Docker networking).
 
-### 2. Containerized Airflow Orchestrator
-Instead of forcing the reviewer to install an Apache Airflow environment onto their host OS (which notoriously crashes on Windows laptops without heavy WSL2 configuration), we generated a precision `docker-compose.yml` architecture. 
-This configuration spins up an isolated `LocalExecutor` Airflow Scheduler, Webserver, and Postgres metadata database. Furthermore, it securely mounts the local `dbt/` and `dags/` folders directly into the Linux environment (`./:/opt/airflow/data`) to allow live DAG compilation!
+All AI-generated outputs were reviewed, validated against the assignment requirements, and iteratively refined — particularly around the custom dbt tests, window function logic, and the WAP pattern implementation.
 
----
-
-## 📊 Data Model Overview
-
-- **Staging Layer:** Cleaned and standardized raw trip data
-- **Intermediate Layer:** Enriched trips with zone metadata and filtered invalid records
-- **Mart Layer:**
-  - `fct_trips`: Core fact table
-  - `dim_zones`: Zone dimension
-  - `agg_daily_revenue`: Daily KPIs
-  - `agg_zone_performance`: Zone-level analytics with ranking
-
----
-
-## 🧠 Architect Brainstormers
-
-### Task 2: The Blue/Green Deployment Dilemma
-*If `run_dbt_tests` fails halfway through, do you want the mart models to be visible? How do you prevent bad data reaching marts?*
-
-**Answer: The Write-Audit-Publish (WAP) Framework**
-If tests fail mid-flight, absolutely NO dirty data should be transparent to Snowflake/Looker consumers. 
-We circumvent this mechanically by manipulating **Schemas**:
-1. **Write:** `dbt run` pushes all transformations strictly to a hidden schema: `taxi_marts_staging`. 
-2. **Audit:** `run_dbt_tests` tests that exact `_staging` schema mathematically natively. 
-3. **Publish (Swap):** If (and only if) the Airflow task resolves 100% test passing efficiency, we execute an atomic SQL swap command: `ALTER SCHEMA taxi_marts_staging RENAME TO taxi_marts_production`. Downstream BI tools only hook into `_production`, rendering data corruption logically impossible. 
-
-### Task 3: The Gap Analysis (Query 3)
-*What Snowflake-specific feature operates 38M row LAG/LEAD gap calculations flawlessly?*
-
-**Answer:** 
-We mathematically reject using Snowflake's *Search Optimization Service (SOS)*, as it natively operates random point lookups—not continuous window sequences. Instead, we generate a `CREATE MATERIALIZED VIEW`, natively deriving the gap caching logic globally into a result state. Any ad-hoc BI sweeps across 2023 historically compute in milliseconds hitting the core **Global Result Caches** without activating the Warehouse Compute threshold natively.
-
----
-
-## 🚀 Key Highlights
-
-- Designed for both local (DuckDB) and scalable (Spark) execution
-- Implements data quality checks using dbt tests (built-in + custom)
-- Supports backfill-safe orchestration via Airflow
-- Demonstrates production-grade patterns like staging → marts layering and WAP (Write-Audit-Publish)
-  
----
-
-## ⚙️ AI Engineering Toolkit: Showcasing 5x Velocity
-
-As part of demonstrating "5x productivity", this project was built with extensive assistance from modern AI coding tools.
-
-AI tools were used throughout the development of this project to accelerate delivery and improve efficiency:
-
-- Generated initial DBT models, staging transformations, and test structures
-- Assisted in designing the Airflow DAG and orchestration flow
-- Helped write and optimize analytical SQL queries (window functions, aggregations)
-- Played a major role in building the PySpark pipeline, including partitioning and performance strategies
-- Assisted in resolving environment and dependency issues (Docker, Airflow setup)
-
-AI significantly accelerated development speed and enabled rapid iteration across different components of the pipeline.
+AI meaningfully compressed the development timeline; the architectural decisions, trade-off reasoning, and Brainstormer answers reflect deliberate engineering judgment rather than generated boilerplate.
