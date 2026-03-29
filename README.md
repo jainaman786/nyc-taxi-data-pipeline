@@ -24,10 +24,9 @@ There is absolutely ZERO requirement to configure Python environments or install
 3. Open `http://localhost:8080/home`, log in using `admin/admin`, and hit **Trigger DAG** on `nyc_taxi_daily_pipeline`. Watch as Airflow securely compiles the logic, `dbt` runs the transformations, and `DuckDB` processes the gigabytes of Parquet math globally!
 
 ### 📸 Proof of Execution (Pipeline Validation)
-*(Insert your Airflow screenshots here to fundamentally prove to the reviewer that the pipeline works beautifully locally!)*
-
-![Airflow Execution Grid](assets/airflow_grid.png) 
-*The pipeline successfully processing data.*
+<img width="940" height="241" alt="image" src="https://github.com/user-attachments/assets/e025b498-eb9e-459a-9e7b-fdeb4be7c4cf" />
+<img width="940" height="438" alt="image" src="https://github.com/user-attachments/assets/c3137af3-74e2-4dae-a86e-3b5f0e7ea559" />
+<img width="940" height="433" alt="image" src="https://github.com/user-attachments/assets/fe1c7bc9-31ec-46f6-b52e-ab2af240b290" />
 
 ---
 
