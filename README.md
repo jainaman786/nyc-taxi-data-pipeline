@@ -43,6 +43,18 @@ This configuration spins up an isolated `LocalExecutor` Airflow Scheduler, Webse
 
 ---
 
+## 📊 Data Model Overview
+
+- **Staging Layer:** Cleaned and standardized raw trip data
+- **Intermediate Layer:** Enriched trips with zone metadata and filtered invalid records
+- **Mart Layer:**
+  - `fct_trips`: Core fact table
+  - `dim_zones`: Zone dimension
+  - `agg_daily_revenue`: Daily KPIs
+  - `agg_zone_performance`: Zone-level analytics with ranking
+
+---
+
 ## 🧠 Architect Brainstormers
 
 ### Task 2: The Blue/Green Deployment Dilemma
@@ -63,10 +75,25 @@ We mathematically reject using Snowflake's *Search Optimization Service (SOS)*, 
 
 ---
 
+## 🚀 Key Highlights
+
+- Designed for both local (DuckDB) and scalable (Spark) execution
+- Implements data quality checks using dbt tests (built-in + custom)
+- Supports backfill-safe orchestration via Airflow
+- Demonstrates production-grade patterns like staging → marts layering and WAP (Write-Audit-Publish)
+  
+---
+
 ## ⚙️ AI Engineering Toolkit: Showcasing 5x Velocity
 
-As actively requested to define "what 5x productivity looks like", this entire repository was engineered collaboratively with **Google Deepmind's Antigravity Autonomous Agentic UI**. 
+As part of demonstrating "5x productivity", this project was built with extensive assistance from modern AI coding tools.
 
-The process proved astronomically effective relative to manual terminal sweeping. Instead of spending 14+ days tracking DuckDB bindings and debugging Airflow python environments manually, I engaged the autonomous agent to intelligently plan, scaffold, and refine the architecture strictly matching "Top 1-5% Staff Engineer" logic parameters. 
+AI tools were used throughout the development of this project to accelerate delivery and improve efficiency:
 
-Antigravity natively processed SQL testing sweeps, proactively identified deprecation warnings inside Apache Airflow orchestrators preventing DB initialization crashing, and explicitly updated our `dbt` tests against mathematical parameter limits independently—essentially mirroring an elite pair-programming dynamic with complete systemic context.
+- Generated initial DBT models, staging transformations, and test structures
+- Assisted in designing the Airflow DAG and orchestration flow
+- Helped write and optimize analytical SQL queries (window functions, aggregations)
+- Played a major role in building the PySpark pipeline, including partitioning and performance strategies
+- Assisted in resolving environment and dependency issues (Docker, Airflow setup)
+
+AI significantly accelerated development speed and enabled rapid iteration across different components of the pipeline.
