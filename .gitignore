@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# Data Files & Databases
+# (We do NOT want to push the 35+ MB dataset or DuckDB binary database to public GitHub!)
+*.parquet
+*.csv
+*.duckdb
+*.db
+taxi.duckdb
+taxi.duckdb.wal
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Airflow
+logs/
+airflow.db
+standalone_admin_password.txt
+airflow.cfg
+webserver_config.py
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store

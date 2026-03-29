@@ -1,0 +1,21 @@
+name: 'nyc_taxi'
+version: '1.0.0'
+config-version: 2
+
+profile: 'nyc_taxi'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_modules", "logs"]
+
+models:
+  nyc_taxi:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table

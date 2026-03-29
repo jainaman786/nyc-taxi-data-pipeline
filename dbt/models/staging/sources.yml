@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: nyc_tlc
+    tables:
+      - name: yellow_trips
+        description: "2023 Yellow Taxi Trip records from Parquet files"
+        meta:
+          external_location: "{{ env_var('DATA_DIR', '..') }}/yellow_tripdata_2023-*.parquet"
+        loaded_at_field: tpep_pickup_datetime
+        freshness:
+          warn_after: {count: 24, period: hour}
+          error_after: {count: 48, period: hour}

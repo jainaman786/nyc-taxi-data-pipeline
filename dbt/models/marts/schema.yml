@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: dim_zones
+    description: "Clean dimension table defining TLC taxi zones"
+    columns:
+      - name: location_id
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_trips
+    description: "Core fact table representing filtered, enriched trip operations"
+    columns:
+      - name: trip_duration_minutes
+        tests:
+          - test_duration_range:
+              min_value: 1
+              max_value: 180
